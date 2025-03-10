@@ -3,12 +3,14 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use log::{info, warn};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     widgets::{Block, Borders, List, ListItem},
 };
+use rayon::iter::ParallelBridge;
 use std::{
     error::Error,
     fs, io,
@@ -16,6 +18,12 @@ use std::{
 };
 
 use open;
+use rayon::iter::ParallelIterator;
+
+use log::LevelFilter;
+use log4rs::append::file::FileAppender;
+use log4rs::config::{Appender, Config, Root};
+use log4rs::encode::pattern::PatternEncoder;
 
 struct App {
     folders: Vec<PathBuf>,
@@ -53,10 +61,9 @@ impl App {
 fn list_folders(path: &Path) -> Vec<PathBuf> {
     fs::read_dir(path)
         .unwrap()
-        .filter_map(|entry| {
-            let entry = entry.unwrap().path();
-            if entry.is_dir() { Some(entry) } else { None }
-        })
+        .par_bridge() // Converts the iterator to a parallel iterator
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|entry| entry.is_dir())
         .collect()
 }
 
@@ -71,6 +78,17 @@ fn list_files(path: &Path) -> Vec<PathBuf> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // env_logger::init();
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .build("log/output.log")?;
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder().appender("logfile").build(LevelFilter::Info))?;
+
+    log4rs::init_config(config)?;
+
     enable_raw_mode().unwrap_or_else(|err| {
         eprintln!("Failed to enable raw mode: {}", err);
         std::process::exit(1);
@@ -82,6 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(".");
+    info!("Starting application at: {:?}", app.current_dir);
 
     loop {
         terminal.draw(|f| {
@@ -153,22 +172,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 KeyCode::Enter => {
                     if let Some(file) = app.files.get(app.selected_file) {
+                        info!("Opening file: {:?}", file);
                         if let Err(e) = open::that(file) {
                             eprintln!("Failed to open file: {}", e);
+                            warn!("Failed to open file: {}", e);
                         }
                     }
                 }
                 KeyCode::Tab => {
                     if let Some(folder) = app.folders.get(app.selected_folder) {
+                        info!("Changing directory to: {:?}", folder);
                         app.change_dir(folder.clone());
                     }
                 }
                 KeyCode::Backspace => {
                     if let Some(parent_dir) = app.current_dir.parent() {
-                        app.change_dir(parent_dir.to_path_buf());
+                        let parent_dir = parent_dir.to_path_buf();
+                        app.change_dir(parent_dir.clone());
+                        info!("Changing directory to: {:?}", &parent_dir);
                     }
                 }
                 KeyCode::Char('q') => {
+                    warn!("Quitting application");
                     break;
                 }
                 _ => {}
