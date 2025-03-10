@@ -80,7 +80,9 @@ fn list_files(path: &Path) -> Vec<PathBuf> {
 fn main() -> Result<(), Box<dyn Error>> {
     // env_logger::init();
     let logfile = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .encoder(Box::new(PatternEncoder::new(
+            "{d(%Y-%m-%d %H:%M:%S)} {l} - {m}\n",
+        )))
         .build("log/output.log")?;
 
     let config = Config::builder()
