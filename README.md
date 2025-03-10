@@ -1,2 +1,2 @@
 # fast_file_exp
-a faster(hopefully) cli based file explorer in RUST
+a basic and faster(hopefully) tui based file explorer in RUST
